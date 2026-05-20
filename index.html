@@ -364,26 +364,23 @@ function updateUI() {
   const title = document.getElementById('emptyTitle');
   const desc = document.getElementById('emptyDesc');
   const typingAvatar = document.getElementById('typingAvatar');
-  const dot = document.getElementById('apiDot');
 
-  if (apiAvailable) { dot.className = 'api-status on'; }
-  else { dot.className = 'api-status off'; }
 
   if (isVerified()) {
     document.title = '纳西妲 · 聊天';
     avatar.classList.add('unlocked'); avatar.textContent = '🌿';
     name.textContent = '纳西妲';
     status.innerHTML = '在线 · 智慧之神<span class="api-status ' + (apiAvailable ? 'on' : 'off') + '" id="apiDot"></span>';
-    icon.classList.add('unlocked'); icon.textContent = '🌿';
-    title.textContent = '开始对话吧'; desc.textContent = '我是纳西妲，须弥的草之神';
+    if (icon) { icon.classList.add('unlocked'); icon.textContent = '🌿'; }
+    if (title) title.textContent = '开始对话吧'; if (desc) desc.textContent = '我是纳西妲，须弥的草之神';
     typingAvatar.style.background = 'linear-gradient(135deg, #5b8c5a, #a3c9a3)'; typingAvatar.textContent = '🌿';
   } else {
     document.title = '聊天';
     avatar.classList.remove('unlocked'); avatar.textContent = '●';
     name.textContent = '助手';
-    status.innerHTML = (codeStep === 1 ? '等待验证…' : '待验证') + '<span class="api-status ' + (apiAvailable ? 'on' : 'off') + '" id="apiDot"></span>';
-    icon.classList.remove('unlocked'); icon.textContent = '●';
-    title.textContent = '你好，陌生人'; desc.textContent = '请先表明身份';
+    status.innerHTML = (codeStep === 1 ? '等待验证…' : '待验证') + '<span class="api-status ' + (apiAvailable ? 'on' : 'off') + '" id="apiDot"></span>'; const dot2 = document.getElementById('apiDot'); if (dot2 && apiAvailable) { dot2.className = 'api-status on'; } else if (dot2) { dot2.className = 'api-status off'; }
+    if (icon) { icon.classList.remove('unlocked'); icon.textContent = '●'; }
+    if (title) title.textContent = '你好，陌生人'; if (desc) desc.textContent = '请先表明身份';
     typingAvatar.style.background = '#999'; typingAvatar.textContent = '●';
   }
 }
@@ -395,11 +392,11 @@ function render() {
   if (messages.length === 0) {
     container.innerHTML = '';
     container.appendChild(empty);
-    empty.style.display = 'flex';
+    if (empty && empty.parentNode) { empty.style.display = 'flex'; }
     return;
   }
 
-  empty.style.display = 'none';
+  if (empty && empty.parentNode) empty.style.display = 'none';
   container.innerHTML = messages.map((m) => {
     const unlockedClass = isVerified() && m.role === 'bot' ? ' unlocked' : '';
     const botAvatar = isVerified() ? '🌿' : '●';
