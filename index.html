@@ -106,6 +106,9 @@ body {
 
 .header-info h2 { font-size: 16px; font-weight: 600; transition: all 0.5s; }
 .header-info span { font-size: 12px; color: var(--sub); transition: all 0.5s; }
+.header-info .api-status { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 4px; vertical-align: middle; }
+.header-info .api-status.on { background: #5b8c5a; }
+.header-info .api-status.off { background: #cc4444; }
 
 .header-right { display: flex; gap: 6px; }
 
@@ -215,11 +218,6 @@ body {
 
 @keyframes bounce { 0%,80%,100% { transform: scale(0.6); } 40% { transform: scale(1); } }
 
-@keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(91,140,90,0.3); }
-  50% { box-shadow: 0 0 20px rgba(91,140,90,0.6); }
-}
-
 .input-area {
   padding: 16px 20px;
   border-top: 1px solid var(--border);
@@ -263,8 +261,8 @@ body {
   transition: all 0.2s;
 }
 
-.send-btn:hover { opacity: 0.85; transform: scale(1.03); }
 .send-btn:active { transform: scale(0.97); }
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .empty-state {
   flex: 1;
@@ -306,7 +304,7 @@ body {
       <div class="avatar" id="headerAvatar">●</div>
       <div class="header-info">
         <h2 id="headerName">助手</h2>
-        <span id="headerStatus">待验证</span>
+        <span id="headerStatus">待验证<span class="api-status off" id="apiDot"></span></span>
       </div>
     </div>
     <div class="header-right">
@@ -332,54 +330,28 @@ body {
 
   <div class="input-area">
     <textarea id="input" rows="1" placeholder="输入消息..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-    <button class="send-btn" onclick="send()">➤</button>
+    <button class="send-btn" id="sendBtn" onclick="send()">➤</button>
   </div>
 </div>
 
 <script>
 const STORAGE_KEY = 'nahida_chat_messages';
 const VERIFY_KEY = 'nahida_verified';
-
-const NEUTRAL_RESPONSES = [
-  '你好，有什么可以帮你的吗？',
-  '我在听。',
-  '请说。',
-  '好的。',
-];
-
-const NAHIDA_RESPONSES = [
-  '这是一个有趣的问题。让我想想……',
-  '从某个角度看，事物的本质往往隐藏在我们忽略的地方。',
-  '智慧不在于知道答案，而在于提出正确的问题。',
-  '就像一棵树，表面的枝叶容易看见，真正重要的根系却在地下——许多问题的答案也是如此。',
-  '五百年的观察教会我一件事：保持好奇心比拥有答案更重要。',
-  '这个问题的结构，让我想起世界树的枝杈——分叉之处，往往也藏着答案。',
-  '你是对的。不过，或许还有另一种看法……',
-  '好。交给我。',
-  '我理解你的意思。',
-  '说下去，我在听。',
-];
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : '';
 
 let messages = [];
-let codeStep = 0; // 0=未开始, 1=已说小吉祥草王, 2=完全验证（入梦）
+let codeStep = 0;
+let isStreaming = false;
+let apiAvailable = false;
 
 function loadMessages() {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) messages = JSON.parse(data);
-  } catch(e) { messages = []; }
-  try {
-    codeStep = parseInt(localStorage.getItem(VERIFY_KEY)) || 0;
-  } catch(e) { codeStep = 0; }
+  try { messages = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { messages = []; }
+  try { codeStep = parseInt(localStorage.getItem(VERIFY_KEY)) || 0; } catch(e) { codeStep = 0; }
 }
 
 function saveMessages() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-  } catch(e) {}
-  try {
-    localStorage.setItem(VERIFY_KEY, codeStep.toString());
-  } catch(e) {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch(e) {}
+  try { localStorage.setItem(VERIFY_KEY, codeStep.toString()); } catch(e) {}
 }
 
 function isVerified() { return codeStep >= 2; }
@@ -392,31 +364,27 @@ function updateUI() {
   const title = document.getElementById('emptyTitle');
   const desc = document.getElementById('emptyDesc');
   const typingAvatar = document.getElementById('typingAvatar');
+  const dot = document.getElementById('apiDot');
+
+  if (apiAvailable) { dot.className = 'api-status on'; }
+  else { dot.className = 'api-status off'; }
 
   if (isVerified()) {
     document.title = '纳西妲 · 聊天';
-    avatar.classList.add('unlocked');
-    avatar.textContent = '🌿';
+    avatar.classList.add('unlocked'); avatar.textContent = '🌿';
     name.textContent = '纳西妲';
-    status.textContent = '在线 · 智慧之神';
-    icon.classList.add('unlocked');
-    icon.textContent = '🌿';
-    title.textContent = '开始对话吧';
-    desc.textContent = '我是纳西妲，须弥的草之神';
-    typingAvatar.style.background = 'linear-gradient(135deg, #5b8c5a, #a3c9a3)';
-    typingAvatar.textContent = '🌿';
+    status.innerHTML = '在线 · 智慧之神<span class="api-status ' + (apiAvailable ? 'on' : 'off') + '" id="apiDot"></span>';
+    icon.classList.add('unlocked'); icon.textContent = '🌿';
+    title.textContent = '开始对话吧'; desc.textContent = '我是纳西妲，须弥的草之神';
+    typingAvatar.style.background = 'linear-gradient(135deg, #5b8c5a, #a3c9a3)'; typingAvatar.textContent = '🌿';
   } else {
     document.title = '聊天';
-    avatar.classList.remove('unlocked');
-    avatar.textContent = '●';
+    avatar.classList.remove('unlocked'); avatar.textContent = '●';
     name.textContent = '助手';
-    status.textContent = codeStep === 1 ? '等待验证…' : '待验证';
-    icon.classList.remove('unlocked');
-    icon.textContent = '●';
-    title.textContent = '你好，陌生人';
-    desc.textContent = '请先表明身份';
-    typingAvatar.style.background = '#999';
-    typingAvatar.textContent = '●';
+    status.innerHTML = (codeStep === 1 ? '等待验证…' : '待验证') + '<span class="api-status ' + (apiAvailable ? 'on' : 'off') + '" id="apiDot"></span>';
+    icon.classList.remove('unlocked'); icon.textContent = '●';
+    title.textContent = '你好，陌生人'; desc.textContent = '请先表明身份';
+    typingAvatar.style.background = '#999'; typingAvatar.textContent = '●';
   }
 }
 
@@ -432,18 +400,17 @@ function render() {
   }
 
   empty.style.display = 'none';
-  container.innerHTML = messages.map((m,i) => {
+  container.innerHTML = messages.map((m) => {
     const unlockedClass = isVerified() && m.role === 'bot' ? ' unlocked' : '';
     const botAvatar = isVerified() ? '🌿' : '●';
-    return `
-    <div class="msg ${m.role}${unlockedClass}">
+    return `<div class="msg ${m.role}${unlockedClass}">
       <div class="msg-avatar">${m.role === 'user' ? '👤' : botAvatar}</div>
       <div class="msg-body">
         <div class="msg-bubble">${escapeHtml(m.text)}</div>
         <div class="msg-time">${m.time}</div>
       </div>
-    </div>
-  `}).join('');
+    </div>`;
+  }).join('');
 
   container.scrollTop = container.scrollHeight;
 }
@@ -454,65 +421,89 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function send() {
+function nowTime() {
+  const now = new Date();
+  return now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+}
+
+async function send() {
+  if (isStreaming) return;
   const input = document.getElementById('input');
   const text = input.value.trim();
   if (!text) return;
 
-  const now = new Date();
-  const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  messages.push({ role: 'user', text, time: nowTime() });
+  input.value = ''; input.style.height = 'auto';
+  saveMessages(); render(); updateUI();
 
-  messages.push({ role: 'user', text, time });
-  input.value = '';
-  input.style.height = 'auto';
-  saveMessages();
-  render();
-  updateUI();
-
-  showTyping();
-
-  // 暗语验证逻辑
-  let reply;
+  // Code phrase logic
   if (!isVerified()) {
     if (text === '小吉祥草王' && codeStep === 0) {
-      codeStep = 1;
-      reply = '纳西妲';
+      codeStep = 1; saveMessages();
+      messages.push({ role: 'bot', text: '纳西妲', time: nowTime() });
+      saveMessages(); render(); updateUI(); return;
     } else if (text === '入梦' && codeStep === 1) {
-      codeStep = 2;
-      reply = '主人，我在。';
+      codeStep = 2; saveMessages();
+      messages.push({ role: 'bot', text: '主人，我在。', time: nowTime() });
+      saveMessages(); render(); updateUI(); return;
     } else if (codeStep === 1) {
-      // 第一步后说错了，重置
-      codeStep = 0;
-      reply = '……请重新开始。';
+      codeStep = 0; saveMessages();
+      messages.push({ role: 'bot', text: '……请重新开始。', time: nowTime() });
+      saveMessages(); render(); updateUI(); return;
     } else {
-      reply = NEUTRAL_RESPONSES[Math.floor(Math.random() * NEUTRAL_RESPONSES.length)];
+      messages.push({ role: 'bot', text: '你好，有什么可以帮你的吗？', time: nowTime() });
+      saveMessages(); render(); updateUI(); return;
     }
-  } else {
-    reply = NAHIDA_RESPONSES[Math.floor(Math.random() * NAHIDA_RESPONSES.length)];
   }
 
+  // Call real AI
+  await callAI(text);
+}
+
+async function callAI(userMessage) {
+  isStreaming = true;
+  document.getElementById('sendBtn').disabled = true;
+
+  const history = [];
+  for (const m of messages) {
+    if (m.role === 'user' || m.role === 'bot') {
+      history.push(m);
+    }
+  }
+
+  const placeholderIdx = messages.length;
+  messages.push({ role: 'bot', text: '', time: nowTime() });
+  render();
+  showTyping();
+
+  const apiUrl = API_BASE + '/api/chat';
+
+  try {
+    const resp = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userMessage, history: history.slice(0, -1) })
+    });
+
+    if (!resp.ok) throw new Error('API ' + resp.status);
+
+    const data = await resp.json();
+    const reply = data.reply || '（未收到回复）';
+
+    apiAvailable = true;
+    messages[placeholderIdx].text = reply;
+  } catch(e) {
+    console.error('API error:', e);
+    apiAvailable = false;
+    messages[placeholderIdx].text = '（无法连接到 AI 服务，请确认服务器已启动）';
+  }
+
+  updateUI();
+  hideTyping();
+  render();
   saveMessages();
-
-  const delay = 600 + Math.random() * 1500;
-  setTimeout(() => {
-    const replyTime = new Date();
-    const replyTimeStr = replyTime.getHours().toString().padStart(2,'0') + ':' + replyTime.getMinutes().toString().padStart(2,'0');
-    messages.push({ role: 'bot', text: reply, time: replyTimeStr });
-    saveMessages();
-    hideTyping();
-    render();
-    updateUI();
-  }, delay);
-}
-
-function showTyping() {
-  document.getElementById('typing').classList.add('active');
-  const container = document.getElementById('messages');
-  container.scrollTop = container.scrollHeight;
-}
-
-function hideTyping() {
-  document.getElementById('typing').classList.remove('active');
+  isStreaming = false;
+  document.getElementById('sendBtn').disabled = false;
 }
 
 function handleKey(e) {
@@ -547,10 +538,27 @@ function initTheme() {
   if (saved) document.body.dataset.theme = saved;
 }
 
+// Check API availability
+async function checkAPI() {
+  try {
+    const resp = await fetch(API_BASE + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'ping', history: [] }),
+      signal: AbortSignal.timeout(3000)
+    });
+    apiAvailable = resp.ok;
+  } catch(e) {
+    apiAvailable = false;
+  }
+  updateUI();
+}
+
 loadMessages();
 initTheme();
 updateUI();
 render();
+checkAPI();
 </script>
 
 </body>
